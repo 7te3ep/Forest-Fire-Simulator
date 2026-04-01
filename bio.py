@@ -3,25 +3,31 @@ import matplotlib.patches as mpatches
 import numpy as np
 import copy
 import random 
+import pygame
 
 # CONST
 grid = []
 SIZE = 10
-REPRODUCT_PROBABILITY = 0.1
-FIRE_DIE_PROBABILITY = [0.5,0.7,0.7]
+REPRODUCT_PROBABILITY = 0.6
+DEATH_PROBABILITY = 0.2
+FIRE_DIE_PROBABILITY = [0.6,0.6,0.6]
 COLORS = ['#3B8A3E', '#D07A18', '#3A6DB5']
 PLANT_NAMES = ['Plante A', 'Plante B', 'Plante C']
-MIN_BIOMASS_FOR_FIRE = 40
+MIN_BIOMASS_FOR_FIRE = 10
 FIRE_PROPAGATION = 0.8
 WIND = [1,1]
 FIRE_START = [5,5]
 neighbors = [[1,0],[0,1],[1,1],[-1,-1],[-1,0],[0,-1],[1,-1],[-1,1]]
 # INIT
 # datagram cell [fire : boolean, plants [A,B,C], biomass : Int]
-for i in range(10):
+
+for i in range(SIZE):
     grid.append([])
-    for j in range(10):
-        grid[i].append([0,[random.randint(0,33),random.randint(0,33),random.randint(0,33)],30])
+    for j in range(SIZE):
+        plant1 = random.randint(0,33)
+        plant2 = random.randint(0,33)
+        plant3 = random.randint(0,33)
+        grid[i].append([0,[plant1,plant2,plant3],plant1+plant2+plant3])
 
 grid[5][5][0] = 1
 
@@ -29,24 +35,26 @@ def checkBoundaries(i,j):
     return i >= 0 and i < SIZE and j >= 0 and j < SIZE
 
 def reproducePlant(plantIndex,i,j,qty,grid):
-    neighbors = [[1,0],[0,1],[1,1],[-1,-1],[-1,0],[0,-1],[1,-1],[-1,1]]
-    for coords in neighbors:
-        target_i = i + coords[0]
-        target_j = j + coords[1]
+    neighbors = [[1,0,0],[0,1,0],[1,1,0],[-1,-1,0],[-1,0,0],[0,-1,0],[1,-1,0],[-1,1,0],[0,0,0]]
+
+    for i in range(qty):
+        if (random.random() < REPRODUCT_PROBABILITY):
+            seed_location = random.randint(0,len(neighbors)-1)
+            neighbors[seed_location][2] += 1
+
+    for n in neighbors:
+        target_i = i + n[0]
+        target_j = j + n[1]
         if not checkBoundaries(target_i,target_j):
             continue
-        current_population_overflow = 1 - (((grid[target_i][target_j][2] + (qty * REPRODUCT_PROBABILITY)))/100)
-        if (current_population_overflow < 0):
-            current_population_overflow = 0
-        reproduce_qty = round(qty * REPRODUCT_PROBABILITY * current_population_overflow)
-        print(reproduce_qty)
-        grid[target_i][target_j][1][plantIndex] += reproduce_qty
 
-    current_population_overflow = 1 - (((qty + (qty * REPRODUCT_PROBABILITY)))/100)
-    if (current_population_overflow < 0):
-        current_population_overflow = 0
-    reproduce_qty = round(qty * REPRODUCT_PROBABILITY * current_population_overflow)
-    grid[i][j][1][plantIndex] += reproduce_qty
+        grid[target_i][target_j][1][plantIndex] += n[2]
+
+def killPlant(plantIndex,i,j,qty,grid,probability):
+    for k in range(qty):
+        if (random.random() < probability):
+            grid[i][j][1][plantIndex] -= 1
+
 
 def step(grid):
     oldGrid = copy.deepcopy(grid)
@@ -59,20 +67,24 @@ def step(grid):
 
     for i in range(SIZE):
         for j in range(SIZE):
+            killPlant(0, i, j, oldGrid[i][j][1][0], grid,DEATH_PROBABILITY)
+            killPlant(1, i, j, oldGrid[i][j][1][1], grid,DEATH_PROBABILITY)
+            killPlant(2, i, j, oldGrid[i][j][1][2], grid,DEATH_PROBABILITY)
+
+    for i in range(SIZE):
+        for j in range(SIZE):
             cell = grid[i][j]
             oldCell = oldGrid[i][j]
             if oldCell[0] == 1:
-                cell[1][0] = round(cell[1][0] - cell[1][0] * FIRE_DIE_PROBABILITY[0])
-                cell[1][1] = round(cell[1][1] - cell[1][1] * FIRE_DIE_PROBABILITY[1])
-                cell[1][2] = round(cell[1][2] - cell[1][2] * FIRE_DIE_PROBABILITY[2])
+                killPlant(0, i, j, oldGrid[i][j][1][0], grid,FIRE_DIE_PROBABILITY[0])
+                killPlant(1, i, j, oldGrid[i][j][1][1], grid,FIRE_DIE_PROBABILITY[1])
+                killPlant(2, i, j, oldGrid[i][j][1][2], grid,FIRE_DIE_PROBABILITY[2])
 
-                # ✅ recalcul immédiat avant de tester l'extinction
                 current_biomass = cell[1][0] + cell[1][1] + cell[1][2]
                 cell[2] = current_biomass
                 if current_biomass < MIN_BIOMASS_FOR_FIRE:
                     cell[0] = 0
 
-                # ✅ copie locale pour ne pas muter la liste globale
                 local_neighbors = [n[:] for n in neighbors]
                 propagation_arr = []
 
@@ -98,98 +110,46 @@ def step(grid):
             cell = grid[i][j]
             cell[2] = cell[1][0] + cell[1][1] + cell[1][2]
 
-def display_grid(grid, title="État de la grille"):
-    fig, axes = plt.subplots(SIZE, SIZE, figsize=(14, 14))
-    fig.suptitle(title, fontsize=14)
-    fig.patch.set_facecolor('#f0f0f0')
+
+
+def update(grid):
+    screen.fill(WHITE)
+    for i in range(SIZE):
+        pygame.draw.line(screen, BLACK, (i * space, 0), (i * space, DISPLAY_SIZE), 1)
+        pygame.draw.line(screen, BLACK, (0, i * space), (DISPLAY_SIZE,i * space), 1)
 
     for i in range(SIZE):
         for j in range(SIZE):
-            ax = axes[i][j]
             cell = grid[i][j]
-            plants = cell[1]
-            biomass = cell[2]
-            on_fire = cell[0] == 1
+            x = i * space
+            y = j * space
+            if (cell[0]):
+                pygame.draw.rect(screen, "orange", (x+1,y+1,space-2,space-2))
+            
+            biomass_text = font.render(str(cell[2]), True, BLACK)
+            print(str(cell[2]))
+            screen.blit(biomass_text, (x+space/20, y+space/20))  
 
-            if on_fire:
-                ax.set_facecolor('#ffdddd')
+    pygame.display.flip()
 
-            # Barres sur seulement 60% de la hauteur pour laisser place au texte
-            if biomass > 0:
-                for p in range(3):
-                    qty = max(0, plants[p])
-                    height = (qty / biomass) * 0.6
-                    bottom = sum(max(0, plants[k]) / biomass for k in range(p)) * 0.6
-                    ax.bar(0, height, bottom=bottom + 0.35, color=COLORS[p], width=0.8)
 
-            # Biomasse en grand en bas
-            ax.text(0.5, 0.18, str(biomass), ha='center', va='center',
-                    fontsize=9, fontweight='bold', color='#222222',
-                    transform=ax.transAxes)
+pygame.init()
+DISPLAY_SIZE = 800
+screen = pygame.display.set_mode((DISPLAY_SIZE, DISPLAY_SIZE))
+pygame.display.set_caption("Forest")
+font = pygame.font.SysFont("Arial", 12)
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+space = DISPLAY_SIZE / SIZE
+update(grid)
 
-            if on_fire:
-                ax.text(0.85, 0.85, '🔥', ha='center', va='center',
-                        fontsize=8, transform=ax.transAxes)
-
-            ax.set_xlim(-0.5, 0.5)
-            ax.set_ylim(0, 1)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            for spine in ax.spines.values():
-                spine.set_edgecolor('#ff4444' if on_fire else '#aaaaaa')
-                spine.set_linewidth(1.5 if on_fire else 0.8)
-
-    # Ligne de séparation visuelle entre barres et biomasse
-    for i in range(SIZE):
-        for j in range(SIZE):
-            axes[i][j].axhline(y=0.3, color='#cccccc', linewidth=0.5)
-
-    patches = [mpatches.Patch(color=COLORS[p], label=PLANT_NAMES[p]) for p in range(3)]
-    fig.legend(handles=patches, loc='lower left', ncol=3, fontsize=10)
-
-    plt.tight_layout(rect=[0, 0.04, 1, 0.96])
-    plt.subplots_adjust(wspace=0, hspace=0)
-    plt.show()
-
-step(grid)
-display_grid(grid)
-step(grid)
-step(grid)
-display_grid(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-display_grid(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-step(grid)
-display_grid(grid)
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: 
+                step(grid)
+                update(grid)
+        if event.type == pygame.QUIT:
+            running = False
+pygame.quit()
