@@ -8,19 +8,20 @@ import pygame
 # CONST
 grid = []
 SIZE = 10
-REPRODUCT_PROBABILITY = 0.6
-DEATH_PROBABILITY = 0.2
-FIRE_DIE_PROBABILITY = [0.6,0.6,0.6]
+REPRODUCT_PROBABILITY = 0.1
+DEATH_PROBABILITY = 0.05
+FIRE_DIE_PROBABILITY = [0.5,0.7,0.7]
 COLORS = ['#3B8A3E', '#D07A18', '#3A6DB5']
 PLANT_NAMES = ['Plante A', 'Plante B', 'Plante C']
 MIN_BIOMASS_FOR_FIRE = 10
+MAX_BIOMASS = 80
 FIRE_PROPAGATION = 0.8
 WIND = [1,1]
-FIRE_START = [5,5]
+FIRE_START = [3,3]
 neighbors = [[1,0],[0,1],[1,1],[-1,-1],[-1,0],[0,-1],[1,-1],[-1,1]]
+
 # INIT
 # datagram cell [fire : boolean, plants [A,B,C], biomass : Int]
-
 for i in range(SIZE):
     grid.append([])
     for j in range(SIZE):
@@ -29,7 +30,16 @@ for i in range(SIZE):
         plant3 = random.randint(0,33)
         grid[i].append([0,[plant1,plant2,plant3],plant1+plant2+plant3])
 
-grid[5][5][0] = 1
+grid[FIRE_START[0]][FIRE_START[1]][0] = 1
+
+def applyCarryingCapacity(i, j, grid):
+    cell = grid[i][j]
+    total = cell[1][0] + cell[1][1] + cell[1][2]
+    if total > MAX_BIOMASS:
+        ratio = MAX_BIOMASS / total
+        cell[1][0] = int(cell[1][0] * ratio)
+        cell[1][1] = int(cell[1][1] * ratio)
+        cell[1][2] = int(cell[1][2] * ratio)
 
 def checkBoundaries(i,j):
     return i >= 0 and i < SIZE and j >= 0 and j < SIZE
@@ -37,9 +47,9 @@ def checkBoundaries(i,j):
 def reproducePlant(plantIndex,i,j,qty,grid):
     neighbors = [[1,0,0],[0,1,0],[1,1,0],[-1,-1,0],[-1,0,0],[0,-1,0],[1,-1,0],[-1,1,0],[0,0,0]]
 
-    for i in range(qty):
+    for k in range(qty):
+        seed_location = random.randint(0,len(neighbors)-1)
         if (random.random() < REPRODUCT_PROBABILITY):
-            seed_location = random.randint(0,len(neighbors)-1)
             neighbors[seed_location][2] += 1
 
     for n in neighbors:
@@ -91,18 +101,26 @@ def step(grid):
                 for n in local_neighbors:
                     dx = n[0] - WIND[0]
                     dy = n[1] - WIND[1]
+
                     if n[0] == WIND[0] and n[1] == WIND[1]:
-                        n.append(FIRE_PROPAGATION)
+                        # Direction exacte du vent
+                        n.append(0.8)
                         propagation_arr.append(n)
                     elif abs(dx) <= 1 and abs(dy) <= 1:
-                        n.append(FIRE_PROPAGATION / 2)
+                        # Cases adjacentes à la direction du vent
+                        n.append(0.2)
+                        propagation_arr.append(n)
+                    elif n[0] == -WIND[0] and n[1] == 0 or n[0] == 0 and n[1] == -WIND[1]:
+                        # Cases latérales opposées
+                        n.append(0.05)
                         propagation_arr.append(n)
 
                 for propagation in propagation_arr:
                     fire_cell = [propagation[0] + i, propagation[1] + j]
                     if not checkBoundaries(fire_cell[0], fire_cell[1]):
                         continue
-                    if random.random() < propagation[2]:
+                    target_biomass = grid[fire_cell[0]][fire_cell[1]][2]
+                    if random.random() < propagation[2] and target_biomass > MIN_BIOMASS_FOR_FIRE:
                         grid[fire_cell[0]][fire_cell[1]][0] = 1
 
     for i in range(SIZE):
@@ -110,13 +128,16 @@ def step(grid):
             cell = grid[i][j]
             cell[2] = cell[1][0] + cell[1][1] + cell[1][2]
 
+    for i in range(SIZE):
+        for j in range(SIZE):
+            applyCarryingCapacity(i, j, grid)
 
 
 def update(grid):
-    screen.fill(WHITE)
+    screen.fill(BLACK)
     for i in range(SIZE):
-        pygame.draw.line(screen, BLACK, (i * space, 0), (i * space, DISPLAY_SIZE), 1)
-        pygame.draw.line(screen, BLACK, (0, i * space), (DISPLAY_SIZE,i * space), 1)
+        pygame.draw.line(screen, WHITE, (i * space, 0), (i * space, DISPLAY_SIZE), 1)
+        pygame.draw.line(screen, WHITE, (0, i * space), (DISPLAY_SIZE,i * space), 1)
 
     for i in range(SIZE):
         for j in range(SIZE):
@@ -124,23 +145,29 @@ def update(grid):
             x = i * space
             y = j * space
             if (cell[0]):
-                pygame.draw.rect(screen, "orange", (x+1,y+1,space-2,space-2))
+                pygame.draw.rect(screen, "RED", (x+1,y+1,space-2,space-2))
             
-            biomass_text = font.render(str(cell[2]), True, BLACK)
-            print(str(cell[2]))
+            colors = ["green","blue","purple"]
+            for l in range(len(colors)):
+                for k in range(cell[1][l]):
+                    randomX = random.randint(x,x+space)
+                    randomY =random.randint(y,y+space)
+                    pygame.draw.circle(screen, colors[l], (randomX,randomY), 2)
+
+            biomass_text = font.render(str(cell[2]), True, WHITE)
             screen.blit(biomass_text, (x+space/20, y+space/20))  
 
     pygame.display.flip()
 
 
 pygame.init()
-DISPLAY_SIZE = 800
+DISPLAY_SIZE = 1000
 screen = pygame.display.set_mode((DISPLAY_SIZE, DISPLAY_SIZE))
 pygame.display.set_caption("Forest")
 font = pygame.font.SysFont("Arial", 12)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-space = DISPLAY_SIZE / SIZE
+space = round(DISPLAY_SIZE / SIZE)
 update(grid)
 
 running = True
